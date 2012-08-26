@@ -20,9 +20,19 @@ var (
 	PASS  = flag.String("pass", os.Getenv("SSH_PASSWORD"), "ssh password")
 	CONNS = flag.Int("c", 7, "concurrent connections")
 	CHANS = flag.Int("C", 7, "concurrent channels per connection")
+	shuffle chan io.Reader
 )
 
-func init() { flag.Parse() }
+func init() { 
+	flag.Parse() 
+	shuffle = make(chan io.Reader, *CHANS)
+	go func() {
+		for {
+			c := <- shuffle
+			shuffle <- c
+		}
+	}()
+}
 
 func main() {
 	config := &ssh.ClientConfig{
@@ -80,6 +90,7 @@ func startChan(conn *ssh.ClientConn, wg *sync.WaitGroup) {
 		log.Printf("unable to open stdout: %v", err)
 		return
 	}
+	shuffle <- stdout
 	if err := ch.Start("cat"); err != nil {
 		log.Printf("unable to start command: %v", err)
 		return
@@ -90,6 +101,6 @@ func startChan(conn *ssh.ClientConn, wg *sync.WaitGroup) {
 		log.Printf("unable to write: %v", err)
 		return
 	}
-	_, err = io.Copy(stdin, stdout)
+	_, err = io.Copy(stdin, <- shuffle)
 	log.Println(err)
 }
